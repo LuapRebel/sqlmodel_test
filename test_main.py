@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
-from .main import Hero, app, get_session
+from .main import Hero, Team, app, get_session
 
 
 @pytest.fixture(name="session")
@@ -26,6 +26,90 @@ def client_fixture(session: Session):
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()
+
+
+def test_create_team(client: TestClient):
+    response = client.post(
+        "/teams/", json={"name": "Preventers", "headquarters": "Sister Margaret's Bar"}
+    )
+    data = response.json()
+
+    assert response.status_code == 200
+    assert data["name"] == "Preventers"
+    assert data["headquarters"] == "Sister Margaret's Bar"
+    assert data["id"] is not None
+
+
+def test_create_team_incomplete(client: TestClient):
+    response = client.post("/heroes/", json={"name": "Preventers"})
+    assert response.status_code == 422
+
+
+def test_create_team_invalid(client: TestClient):
+    response = client.post(
+        "/heroes/",
+        json={"name": "Preventers", "headquarters": {"message": "this is not HQ"}},
+    )
+    assert response.status_code == 422
+
+
+def test_read_teams(session: Session, client: TestClient):
+    team_1 = Team(name="Preventers", headquarters="Sister Margaret's Bar")
+    team_2 = Team(name="Z-Force", headquarters="ZHQ")
+    session.add(team_1)
+    session.add(team_2)
+    session.commit()
+
+    response = client.get("/teams/")
+    data = response.json()
+
+    assert response.status_code == 200
+
+    assert len(data) == 2
+    assert data[0]["name"] == "Preventers"
+    assert data[0]["headquarters"] == "Sister Margaret's Bar"
+    assert data[0]["id"] is not None
+    assert data[1]["name"] == "Z-Force"
+    assert data[1]["headquarters"] == "ZHQ"
+    assert data[1]["id"] is not None
+
+
+def test_read_team(session: Session, client: TestClient):
+    team_1 = Team(name="Preventers", headquarters="Sister Margaret's Bar")
+    session.add(team_1)
+    session.commit()
+
+    response = client.get(f"/teams/{team_1.id}")
+    data = response.json()
+
+    assert response.status_code == 200
+    assert data["name"] == "Preventers"
+    assert data["headquarters"] == "Sister Margaret's Bar"
+    assert data["id"] is not None
+
+
+def test_update_team(session: Session, client: TestClient):
+    team_1 = Team(name="Preventers", headquarters="Sister Margaret's Bar")
+    session.add(team_1)
+    session.commit()
+
+    response = client.patch(f"/teams/{team_1.id}", json={"name": "Avengers"})
+    data = response.json()
+
+    assert data["name"] == "Avengers"
+    assert data["headquarters"] == "Sister Margaret's Bar"
+    assert data["id"] is not None
+
+
+def test_delete_team(session: Session, client: TestClient):
+    team_1 = Team(name="Preventers", headquarters="Sister Margaret's Bar")
+    session.add(team_1)
+    session.commit()
+
+    response = client.delete(f"/teams/{team_1.id}")
+    team_in_db = session.get(Team, team_1.id)
+    assert response.status_code == 200
+    assert team_in_db is None
 
 
 def test_create_hero(client: TestClient):
